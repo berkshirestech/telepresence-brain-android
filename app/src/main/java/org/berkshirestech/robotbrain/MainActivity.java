@@ -26,12 +26,17 @@ import com.hoho.android.usbserial.util.HexDump;
 import com.hoho.android.usbserial.util.SerialInputOutputManager;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import io.socket.client.IO;
+import io.socket.client.Socket;
+import io.socket.emitter.Emitter;
 
 public class MainActivity extends AppCompatActivity {
     private static String TAG = MainActivity.class.getSimpleName();
@@ -44,6 +49,8 @@ public class MainActivity extends AppCompatActivity {
     private UsbSerialPort legPort;
     private UsbSerialPort headPort;
     private boolean legMode = true;
+
+    private Socket socket;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -111,6 +118,14 @@ public class MainActivity extends AppCompatActivity {
             legMode = true;
         }else if(keyCode == KeyEvent.KEYCODE_2){
             legMode = false;
+        }else if(keyCode == KeyEvent.KEYCODE_3){
+            newCheckUsb();
+        }else if(keyCode == KeyEvent.KEYCODE_4){
+            try {
+                connectSocketIO();
+            } catch (URISyntaxException e) {
+                Log.e(TAG, e.getMessage());
+            }
         }else{
             if(legMode){
                 stopLegs();
@@ -246,8 +261,6 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
-
-
     public void checkUsb(){
         UsbManager manager = (UsbManager) getSystemService(Context.USB_SERVICE);
         HashMap<String, UsbDevice> deviceList = manager.getDeviceList();
@@ -258,6 +271,50 @@ public class MainActivity extends AppCompatActivity {
             Log.d("USB", device.getDeviceName());
 
         }
+    }
+
+    public void connectSocketIO() throws URISyntaxException {
+        socket = IO.socket("http://warm-eyrie-7840.herokuapp.com/");
+        socket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
+
+            @Override
+            public void call(Object... args) {
+                Log.d(TAG,"connected");
+                socket.emit("imarobot");
+            }
+
+        }).on("keydown", new Emitter.Listener() {
+
+            @Override
+            public void call(Object... args) {
+                Log.d(TAG,"keydown");
+                String key = args[0].toString();
+                if(key.equals(key.toUpperCase())){
+                    //its an uppercase letter, therefore its for the head
+                    writeHead(key);
+                }else{
+                    writeLeg(key);
+                }
+            }
+
+        }).on("stop", new Emitter.Listener() {
+
+            @Override
+            public void call(Object... args) {
+                Log.d(TAG,"stop");
+                stopLegs();
+                stopHead();
+            }
+
+        }).on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
+
+            @Override
+            public void call(Object... args) {
+                Log.d(TAG,"disconnected");
+            }
+
+        });
+        socket.connect();
     }
 
 
@@ -272,40 +329,42 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Open a connection to the first available driver.
-        UsbSerialDriver driver = availableDrivers.get(0);
-        UsbDeviceConnection connection = manager.openDevice(driver.getDevice());
-        if (connection == null) {
-            Log.d("USB", "You probably need to call UsbManager.requestPermission(driver.getDevice(), ..)");
-            // You probably need to call UsbManager.requestPermission(driver.getDevice(), ..)
-            return;
-        }
+        for(UsbSerialDriver driver : availableDrivers){
 
-        for(UsbSerialPort port : driver.getPorts()){
+            UsbDeviceConnection connection = manager.openDevice(driver.getDevice());
+            if (connection == null) {
+                Log.d("USB", "You probably need to call UsbManager.requestPermission(driver.getDevice(), ..)");
+                // You probably need to call UsbManager.requestPermission(driver.getDevice(), ..)
+                return;
+            }
 
-            try {
-                port.open(connection);
-                port.setParameters(BAUD_RATE, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
-                byte buffer[] = new byte[8];
+            for(UsbSerialPort port : driver.getPorts()){
+                Log.d(TAG, "found a port: " + port.getPortNumber());
+                try {
+                    port.open(connection);
+                    port.setParameters(BAUD_RATE, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+                    byte buffer[] = new byte[8];
 
-                port.write("h".getBytes(), 1000);
+                    port.write("h".getBytes(), 1000);
 
-                int numBytesRead = port.read(buffer, 1000);
-                if(numBytesRead > 0){
-                    char code = (char) buffer[0];
-                    if(code == 'l'){
-                        //its the legs
-                        Log.d("USB", "Found the leg port.");
-                        legPort = port;
-                    }else if(code == 'h'){
-                        //its the legs
-                        Log.d("USB", "Found the head port.");
-                        headPort = port;
+                    int numBytesRead = port.read(buffer, 1000);
+                    if(numBytesRead > 0){
+                        char code = (char) buffer[0];
+                        if(code == 'l'){
+                            //its the legs
+                            Log.d("USB", "Found the leg port.");
+                            legPort = port;
+                        }else if(code == 'h'){
+                            //its the legs
+                            Log.d("USB", "Found the head port.");
+                            headPort = port;
+                        }
                     }
-                }
 
-            } catch (IOException e) {
-                // Deal with error.
-                throw new RuntimeException(e);
+                } catch (IOException e) {
+                    // Deal with error.
+                    throw new RuntimeException(e);
+                }
             }
         }
     }
