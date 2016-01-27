@@ -1,46 +1,40 @@
 package org.berkshirestech.robotbrain;
 
-import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
 import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.Menu;
-import android.view.MenuItem;
 
 import com.hoho.android.usbserial.driver.UsbSerialDriver;
 import com.hoho.android.usbserial.driver.UsbSerialPort;
 import com.hoho.android.usbserial.driver.UsbSerialProber;
-import com.hoho.android.usbserial.util.HexDump;
-import com.hoho.android.usbserial.util.SerialInputOutputManager;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.util.HashMap;
-import java.util.Iterator;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Locale;
 
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements TextToSpeech.OnInitListener{
     private static String TAG = MainActivity.class.getSimpleName();
 
+    private final int REQ_CODE_SPEECH_INPUT = 100;
     private static final int BAUD_RATE = 9600; // BaudRate. Change this value if you need
     public static final int MESSAGE_FROM_SERIAL_PORT = 0;
 
@@ -52,13 +46,19 @@ public class MainActivity extends AppCompatActivity {
 
     private Socket socket;
 
+
+    private TextToSpeech tts;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
-        newCheckUsb();
+        connectUSB();
+
+        tts = new TextToSpeech(this,this);
+
 
         FloatingActionButton forwardButton = (FloatingActionButton) findViewById(R.id.forward);
         forwardButton.setOnClickListener(new View.OnClickListener() {
@@ -115,20 +115,29 @@ public class MainActivity extends AppCompatActivity {
     public boolean onKeyUp(int keyCode, KeyEvent event) {
 //        Log.i(TAG, "key event: " + event);
         if(keyCode == KeyEvent.KEYCODE_1){
+            say("Leg mode on!");
             legMode = true;
         }else if(keyCode == KeyEvent.KEYCODE_2){
+            say("Head mode on!");
             legMode = false;
         }else if(keyCode == KeyEvent.KEYCODE_3){
-            newCheckUsb();
+            say("Connecting to motors");
+            connectUSB();
         }else if(keyCode == KeyEvent.KEYCODE_4){
+            say("Connecting to internet");
             try {
                 connectSocketIO();
             } catch (URISyntaxException e) {
                 Log.e(TAG, e.getMessage());
             }
+        }else if(keyCode == KeyEvent.KEYCODE_5){
+            centerHead();
+        }else if(keyCode == KeyEvent.KEYCODE_ENTER){
+            promptSpeechInput();
         }else{
             if(legMode){
                 stopLegs();
+                stopHead();
             }else{
                 stopHead();
             }
@@ -136,9 +145,77 @@ public class MainActivity extends AppCompatActivity {
         return super.onKeyUp(keyCode, event);
     }
 
+
+
+    /**
+     * Showing google speech input dialog
+     * */
+    private void promptSpeechInput() {
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
+                "Talk to me, baby.");
+        try {
+            startActivityForResult(intent, REQ_CODE_SPEECH_INPUT);
+        } catch (ActivityNotFoundException a) {
+            say("Sorry, I'm not listening right now.");
+        }
+    }
+
+    /**
+     * Receiving speech input
+     * */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        switch (requestCode) {
+            case REQ_CODE_SPEECH_INPUT: {
+                if (resultCode == RESULT_OK && null != data) {
+
+                    ArrayList<String> result = data
+                            .getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+                    doCommand(result.get(0).trim().toLowerCase());
+                }
+                break;
+            }
+
+        }
+    }
+
+    private void doCommand(String text){
+        if(text.contains("dance")){
+            dance();
+        }else if(text.contains("center head")){
+            centerHead();
+            say("yes human");
+        }else if(text.contains("make me a sandwich")){
+            say("I'm afraid I can't do that");
+        }else if(text.contains("tell me a joke")){
+            say("0110111001101111");
+        }else{
+            say("I didn't understand you.");
+        }
+    }
+
+    private void dance(){
+        say("commencing dance");
+        goLeft();
+        Handler handler = new Handler();
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                stopLegs();
+                say("that's enough, humans");
+            }
+        }, 5000);
+    }
+
     public void pressUp(){
-        if(legMode){
-            goForward();
+        if (legMode){
+            goBack();
         }else{
             goUp();
         }
@@ -146,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
 
     public void pressDown(){
         if(legMode){
-            goBack();
+            goForward();
         }else{
             goDown();
         }
@@ -155,6 +232,7 @@ public class MainActivity extends AppCompatActivity {
     public void pressRight(){
         if(legMode){
             goRight();
+            goHeadLeft();
         }else{
             goHeadRight();
         }
@@ -163,6 +241,7 @@ public class MainActivity extends AppCompatActivity {
     public void pressLeft(){
         if(legMode){
             goLeft();
+            goHeadRight();
         }else{
             goHeadLeft();
         }
@@ -218,6 +297,10 @@ public class MainActivity extends AppCompatActivity {
         writeHead("D");
     }
 
+    public void centerHead(){
+        writeHead("C");
+    }
+
     public void writeLeg(String c){
         if(legPort != null){
             try {
@@ -241,36 +324,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
-        }
-
-        return super.onOptionsItemSelected(item);
-    }
-
-    public void checkUsb(){
-        UsbManager manager = (UsbManager) getSystemService(Context.USB_SERVICE);
-        HashMap<String, UsbDevice> deviceList = manager.getDeviceList();
-        Iterator<UsbDevice> deviceIterator = deviceList.values().iterator();
-        while(deviceIterator.hasNext()){
-            UsbDevice device = deviceIterator.next();
-            //your code
-            Log.d("USB", device.getDeviceName());
-
-        }
+        return false;
     }
 
     public void connectSocketIO() throws URISyntaxException {
@@ -318,7 +372,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    public void newCheckUsb(){
+    public void connectUSB(){
         Log.d("USB", "Checking USB");
         // Find all available drivers from attached devices.
         UsbManager manager = (UsbManager) getSystemService(Context.USB_SERVICE);
@@ -369,26 +423,36 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-//    private static final String ACTION_USB_PERMISSION =
-//            "com.android.example.USB_PERMISSION";
-//    private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
-//
-//        public void onReceive(Context context, Intent intent) {
-//            String action = intent.getAction();
-//            if (ACTION_USB_PERMISSION.equals(action)) {
-//                synchronized (this) {
-//                    UsbDevice device = (UsbDevice)intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-//
-//                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-//                        if(device != null){
-//                            //call method to set up device communication
-//                        }
-//                    }
-//                    else {
-//                        Log.d("USB", "permission denied for device " + device);
-//                    }
-//                }
-//            }
-//        }
-//    };
+    @Override
+    public void onInit(int status) {
+
+        if (status == TextToSpeech.SUCCESS) {
+
+            int result = tts.setLanguage(Locale.US);
+
+            if (result == TextToSpeech.LANG_MISSING_DATA
+                    || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.e("TTS", "This Language is not supported");
+            } else {
+                say("Text to speech is working");
+            }
+
+        } else {
+            Log.e("TTS", "Initilization Failed!");
+        }
+    }
+
+    private void say(String text){
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+    }
+
+    @Override
+    public void onDestroy() {
+        // Don't forget to shutdown tts!
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
+        }
+        super.onDestroy();
+    }
 }
