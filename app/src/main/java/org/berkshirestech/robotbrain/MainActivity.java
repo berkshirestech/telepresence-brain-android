@@ -156,7 +156,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
         intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
-                "Talk to me, baby.");
+                "Talk to me.");
         try {
             startActivityForResult(intent, REQ_CODE_SPEECH_INPUT);
         } catch (ActivityNotFoundException a) {
@@ -191,12 +191,23 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }else if(text.contains("center head")){
             centerHead();
             say("yes human");
-        }else if(text.contains("make me a sandwich")){
+        }else if(text.contains("make a sandwich")){
             say("I'm afraid I can't do that");
         }else if(text.contains("tell me a joke")){
             say("0110111001101111");
+        }else if(text.contains("hello robot")){
+            say("die humans");
+        }else if(text.contains("peanut butter")){
+            say("jelly time");
+        }else if(text.contains("tv")){
+            say("you mean remote control");
+        }else if(text.contains("i love you")){
+            say("what is love");
+        }else if(text.contains("i hate you")){
+            runAwayAndCry();
+
         }else{
-            say("I didn't understand you.");
+            say("I didn't understand you. did you say "+ text);
         }
     }
 
@@ -211,6 +222,20 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 say("that's enough, humans");
             }
         }, 5000);
+    }
+
+
+    private void runAwayAndCry(){
+        say("fine I'm leaving");
+        goLeft();
+        Handler handler = new Handler();
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                stopLegs();
+                say("boo hoo hoo");
+            }
+        }, 3000);
     }
 
     public void pressUp(){
