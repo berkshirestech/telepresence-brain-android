@@ -27,7 +27,7 @@
                 android:resource="@xml/device_filter" />
         </activity>
         <service
-            android:name=".BgService"
+            android:name=".RobotService"
             android:icon="@mipmap/ic_launcher"
             android:label="@string/service_name"
             >
