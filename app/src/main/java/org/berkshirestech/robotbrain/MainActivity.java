@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.speech.RecognizerIntent;
@@ -23,36 +24,109 @@ public class MainActivity extends AppCompatActivity{
     private static String TAG = MainActivity.class.getSimpleName();
 
     private final int REQ_CODE_SPEECH_INPUT = 100;
+    private boolean legMode = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
+//        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+//        setSupportActionBar(toolbar);
     }
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-//        Log.i(TAG, "key event: " + event);
-        if(mBound && mService.handleKeyUp(keyCode, event)){
-            return false;
-        }else{
-            return super.onKeyDown(keyCode, event);
+        Log.i(TAG, "key event: " + event);
+        if(event.getRepeatCount() == 0){
+            if(keyCode == KeyEvent.KEYCODE_DPAD_DOWN){
+                if (legMode){
+                    mService.goBack();
+                }else{
+                    mService.goUp();
+                }
+                return true;
+
+            }else if(keyCode == KeyEvent.KEYCODE_DPAD_LEFT){
+                if(legMode){
+                    mService.goLeft();
+                }else{
+                    mService.goHeadLeft();
+                }
+                return true;
+
+            }else if(keyCode == KeyEvent.KEYCODE_DPAD_RIGHT){
+                if(legMode){
+                    mService.goRight();
+                }else{
+                    mService.goHeadRight();
+                }
+                return true;
+
+            }else if(keyCode == KeyEvent.KEYCODE_DPAD_UP){
+                if(legMode){
+                    mService.goForward();
+                }else{
+                    mService.goDown();
+                }
+                return true;
+
+            }
         }
+        return false;
     }
 
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
+
+        Log.i(TAG, "key event: " + event);
         if(keyCode == KeyEvent.KEYCODE_ENTER){
             promptSpeechInput();
-        }else if(mBound && mService.handleKeyUp(keyCode, event)){
-            return false;
+        }else if(keyCode == KeyEvent.KEYCODE_1) {
+            mService.say("Leg mode on!");
+            legMode = true;
+        }else if(keyCode == KeyEvent.KEYCODE_2){
+            mService.say("Head mode on!");
+            legMode = false;
+        }else if(keyCode == KeyEvent.KEYCODE_3 || keyCode == KeyEvent.KEYCODE_M){
+            mService.say("Connecting to motors");
+            mService.connectUSB();
+        }else if(keyCode == KeyEvent.KEYCODE_4){
+            mService.say("Connecting to internet");
+            try {
+                mService.connectSocketIO();
+                openWebPage();
+            } catch (URISyntaxException e) {
+                Log.e(TAG, e.getMessage());
+            }
+        }else if(keyCode == KeyEvent.KEYCODE_5){
+            mService.centerHead();
+        }else if(keyCode == KeyEvent.KEYCODE_6){
+            mService.kickstarter();
+        }else if(keyCode == KeyEvent.KEYCODE_E){
+            mService.say("Excuse me");
+        }else if(keyCode == KeyEvent.KEYCODE_D){
+            mService.dance();
+        }else if(keyCode == KeyEvent.KEYCODE_H){
+            mService.say("Hello");
         }else{
-            return super.onKeyDown(keyCode, event);
+            if(legMode){
+                mService.stopLegs();
+                mService.stopHead();
+            }else{
+                mService.stopHead();
+            }
         }
         return super.onKeyUp(keyCode, event);
+    }
+
+
+    private void openWebPage(){
+        Uri webpage = Uri.parse("https://warm-eyrie-7840.herokuapp.com/?host=true");
+        Intent intent = new Intent(Intent.ACTION_VIEW, webpage);
+        if (intent.resolveActivity(getPackageManager()) != null) {
+            startActivity(intent);
+        }
     }
 
 

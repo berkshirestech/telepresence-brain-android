@@ -9,9 +9,7 @@ import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.speech.tts.TextToSpeech;
-import android.support.annotation.Nullable;
 import android.util.Log;
-import android.view.KeyEvent;
 
 import com.hoho.android.usbserial.driver.UsbSerialDriver;
 import com.hoho.android.usbserial.driver.UsbSerialPort;
@@ -19,6 +17,8 @@ import com.hoho.android.usbserial.driver.UsbSerialProber;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -32,22 +32,10 @@ import io.socket.emitter.Emitter;
 public class RobotService extends Service  implements TextToSpeech.OnInitListener{
     private static String TAG = RobotService.class.getSimpleName();
     private static final int BAUD_RATE = 9600; // BaudRate. Change this value if you need
-    public static final int MESSAGE_FROM_SERIAL_PORT = 0;
-
-    public static boolean SERVICE_CONNECTED = false;
-
-    private UsbSerialPort legPort;
-    private UsbSerialPort headPort;
-    private boolean legMode = true;
+    private UsbSerialPort motorPort;
 
     private Socket socket;
     private TextToSpeech tts;
-
-
-
-
-
-
 
     // Binder given to clients
     private final IBinder mBinder = new RobotBinder();
@@ -80,69 +68,6 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
         return super.onStartCommand(intent, flags, startId);
     }
 
-    /**
-     * Returns true if it handled the event
-     *
-     * @param keyCode
-     * @param event
-     * @return
-     */
-    public boolean handleKeyDown(int keyCode, KeyEvent event) {
-//        Log.i(TAG, "key event: " + event);
-        if(event.getRepeatCount() == 0){
-            if(keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP){
-                pressUp();
-                return true;
-
-            }else if(keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT){
-                pressLeft();
-                return true;
-
-            }else if(keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT){
-                pressRight();
-                return true;
-
-            }else if(keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN){
-                pressDown();
-                return true;
-
-            }
-        }
-        return false;
-    }
-
-
-    public boolean handleKeyUp(int keyCode, KeyEvent event) {
-//        Log.i(TAG, "key event: " + event);
-        if(keyCode == KeyEvent.KEYCODE_1){
-            say("Leg mode on!");
-            legMode = true;
-        }else if(keyCode == KeyEvent.KEYCODE_2){
-            say("Head mode on!");
-            legMode = false;
-        }else if(keyCode == KeyEvent.KEYCODE_3){
-            say("Connecting to motors");
-            connectUSB();
-        }else if(keyCode == KeyEvent.KEYCODE_4){
-            say("Connecting to internet");
-            try {
-                connectSocketIO();
-            } catch (URISyntaxException e) {
-                Log.e(TAG, e.getMessage());
-            }
-        }else if(keyCode == KeyEvent.KEYCODE_5){
-            centerHead();
-        }else{
-            if(legMode){
-                stopLegs();
-                stopHead();
-            }else{
-                stopHead();
-            }
-        }
-        return false;
-    }
-
 
     public void doCommand(String text){
         if(text.contains("dance")){
@@ -162,7 +87,7 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
             say("you mean remote control");
         }else if(text.contains("i love you")){
             say("what is love");
-        }else if(text.contains("i hate you")){
+        }else if(text.contains("go away")){
             runAwayAndCry();
 
         }else{
@@ -170,7 +95,7 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
         }
     }
 
-    private void dance(){
+    public void dance(){
         say("commencing dance");
         goLeft();
         Handler handler = new Handler();
@@ -182,6 +107,76 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
             }
         }, 5000);
     }
+
+    public void kickstarter(){
+        doCommands(
+                cSay("exterminate. exterminate. exterminate."),
+                cForward(4000),
+                cWait(2000),
+                cLeft(1000),
+                cWait(1000),
+                cSay("oh. I didn't see you there."),
+                cWait(2000),
+                cSay("I love humans. please support our kick starter"),
+                cWait(3000),
+                cRight(1000),
+                cWait(500),
+                cSay("exterminate. exterminate. exterminate."),
+                cForward(8000)
+        );
+    }
+
+    private RobotCommand cWait(int duration){
+        return new RobotCommand(duration) {
+            @Override
+            void exec() {
+                //do nothing
+            }
+        };
+    }
+
+    private RobotCommand cSay(final String text){
+        return new RobotCommand(0) {
+            @Override
+            void exec() {
+                say(text);
+            }
+        };
+    }
+
+    private RobotCommand cLeft(int duration){
+        return new RobotCommand(duration) {
+            @Override
+            void exec() {
+                goLeft();
+            }
+        };
+    }
+
+    private RobotCommand cRight(int duration){
+        return new RobotCommand(duration) {
+            @Override
+            void exec() {
+                goRight();
+            }
+        };
+    }
+
+
+    private RobotCommand cForward(int duration){
+        return new RobotCommand(duration) {
+            @Override
+            void exec() {
+                goForward();
+            }
+        };
+    }
+
+    private void doCommands(RobotCommand... commands){
+        List<RobotCommand> commandList = new ArrayList<>(Arrays.asList(commands));
+        commandList.remove(0).doCommand(commandList);
+    }
+
 
 
     private void runAwayAndCry(){
@@ -197,115 +192,71 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
         }, 3000);
     }
 
-    public void pressUp(){
-        if (legMode){
-            goBack();
-        }else{
-            goUp();
-        }
-    }
-
-    public void pressDown(){
-        if(legMode){
-            goForward();
-        }else{
-            goDown();
-        }
-    }
-
-    public void pressRight(){
-        if(legMode){
-            goRight();
-            goHeadLeft();
-        }else{
-            goHeadRight();
-        }
-    }
-
-    public void pressLeft(){
-        if(legMode){
-            goLeft();
-            goHeadRight();
-        }else{
-            goHeadLeft();
-        }
-    }
-
     public void goForward(){
         Log.i(TAG, "go forward");
-        writeLeg("f");
+        writeMotor("f");
     }
 
     public void goBack(){
         Log.i(TAG, "go back");
-        writeLeg("b");
+        writeMotor("b");
     }
 
     public void goLeft(){
         Log.i(TAG, "go left");
-        writeLeg("l");
+        writeMotor("l");
     }
 
     public void goRight(){
         Log.i(TAG, "go right");
-        writeLeg("r");
+        writeMotor("r");
     }
 
     public void stopLegs(){
         Log.i(TAG, "stopping legs");
-        writeLeg("s");
+        writeMotor("s");
     }
 
     public void stopHead(){
         Log.i(TAG, "stopping head");
-        writeHead("S");
+        writeMotor("S");
     }
 
     public void goUp(){
         Log.i(TAG, "head up");
-        writeHead("U");
+        writeMotor("U");
     }
 
     public void goHeadRight(){
         Log.i(TAG, "head right");
-        writeHead("R");
+        writeMotor("R");
     }
 
     public void goHeadLeft(){
         Log.i(TAG, "head left");
-        writeHead("L");
+        writeMotor("L");
     }
 
     public void goDown(){
         Log.i(TAG, "head down");
-        writeHead("D");
+        writeMotor("D");
     }
 
     public void centerHead(){
-        writeHead("C");
+        writeMotor("C");
     }
 
-    public void writeLeg(String c){
-        if(legPort != null){
+    public void writeMotor(String c){
+        if(motorPort != null){
             try {
-                legPort.write(c.getBytes(), 1000);
+                motorPort.write(c.getBytes(), 1000);
             } catch (IOException e) {
                 Log.e(TAG, e.getMessage());
             }
         }
     }
 
-
-    public void writeHead(String c){
-        if(headPort != null){
-            try {
-                headPort.write(c.getBytes(), 1000);
-            } catch (IOException e) {
-                Log.e(TAG, e.getMessage());
-            }
-        }
-    }
-    private void connectSocketIO() throws URISyntaxException {
+    public void connectSocketIO() throws URISyntaxException {
         socket = IO.socket("http://warm-eyrie-7840.herokuapp.com/");
         socket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
 
@@ -323,9 +274,9 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
                 String key = args[0].toString();
                 if(key.equals(key.toUpperCase())){
                     //its an uppercase letter, therefore its for the head
-                    writeHead(key);
+                    writeMotor(key);
                 }else{
-                    writeLeg(key);
+                    writeMotor(key);
                 }
             }
 
@@ -350,7 +301,7 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
     }
 
 
-    private void connectUSB(){
+    public void connectUSB(){
         Log.d("USB", "Checking USB");
         // Find all available drivers from attached devices.
         UsbManager manager = (UsbManager) getSystemService(Context.USB_SERVICE);
@@ -382,14 +333,10 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
                     int numBytesRead = port.read(buffer, 1000);
                     if(numBytesRead > 0){
                         char code = (char) buffer[0];
-                        if(code == 'l'){
+                        if(code == 'm'){
                             //its the legs
-                            Log.d("USB", "Found the leg port.");
-                            legPort = port;
-                        }else if(code == 'h'){
-                            //its the legs
-                            Log.d("USB", "Found the head port.");
-                            headPort = port;
+                            Log.d("USB", "Found the motor port.");
+                            motorPort = port;
                         }
                     }
 
@@ -421,6 +368,7 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
     }
 
     public void say(String text){
+        Log.i(TAG, "trying to say " + text);
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
     }
 
@@ -432,5 +380,31 @@ public class RobotService extends Service  implements TextToSpeech.OnInitListene
             tts.shutdown();
         }
         super.onDestroy();
+    }
+
+    private abstract class RobotCommand {
+        private int duration;
+
+        public RobotCommand(int duration) {
+            this.duration = duration;
+        }
+
+        public void doCommand(final List<RobotCommand> remainingCommands){
+            this.exec();
+            Handler handler = new Handler();
+            handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    stopLegs();
+                    stopHead();
+                    if(remainingCommands.size() > 0){
+                        remainingCommands.remove(0).doCommand(remainingCommands);
+                    }
+                }
+            }, duration);
+        }
+
+        abstract void exec();
+
     }
 }
